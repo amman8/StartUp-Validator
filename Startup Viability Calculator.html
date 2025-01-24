@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Startup Viability Calculator</title>
+    <style>
+        body {
+            font-family: -apple-system, system-ui, sans-serif;
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            background: #f5f5f5;
+        }
+        .calculator, .saved-results {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+        .input-group {
+            margin-bottom: 1.5rem;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+        select, input, textarea {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 0.5rem;
+        }
+        textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        button {
+            background: #0066cc;
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            margin-bottom: 0.5rem;
+        }
+        button:hover {
+            background: #0052a3;
+        }
+        .results {
+            margin-top: 2rem;
+            padding: 1rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            display: none;
+        }
+        .warning {
+            color: #d32f2f;
+            font-weight: 600;
+        }
+        .recommendation {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: #e3f2fd;
+            border-radius: 4px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 0.5rem;
+            text-align: left;
+        }
+        th {
+            background: #f5f5f5;
+        }
+        .saved-idea {
+            cursor: pointer;
+        }
+        .saved-idea:hover {
+            background: #f5f5f5;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+        }
+        .modal-content {
+            background: white;
+            margin: 10% auto;
+            padding: 2rem;
+            max-width: 600px;
+            border-radius: 8px;
+        }
+        .close {
+            float: right;
+            cursor: pointer;
+            font-size: 1.5rem;
+        }
+        #export-import {
+            margin-top: 1rem;
+            display: flex;
+            gap: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="calculator">
+        <h1>Startup Viability Calculator</h1>
+        
+        <div class="input-group">
+            <label for="idea">Business Idea</label>
+            <textarea id="idea" placeholder="Describe your business idea..."></textarea>
+        </div>
+
+        <div class="input-group">
+            <label for="revenue-goal">3-Year Revenue Goal</label>
+            <select id="revenue-goal">
+                <option value="100000">6-figures ($100k)</option>
+                <option value="1000000">7-figures ($1M)</option>
+                <option value="10000000">8-figures ($10M)</option>
+                <option value="100000000">9-figures ($100M)</option>
+            </select>
+        </div>
+
+        <div class="input-group">
+            <label for="price">Monthly Price Per Customer ($)</label>
+            <input type="number" id="price" value="100" min="1">
+        </div>
+
+        <div class="input-group">
+            <label for="market-size">Total Addressable Market (# of potential customers)</label>
+            <input type="number" id="market-size" value="30000" min="1">
+        </div>
+
+        <button onclick="calculate()">Calculate Viability</button>
+
+        <div id="results" class="results">
+            <h2>Results:</h2>
+            <p>Annual Revenue per Customer: $<span id="annual-revenue"></span></p>
+            <p>Required Customers: <span id="required-customers"></span></p>
+            <p>Required Leads (1% conversion): <span id="required-leads"></span></p>
+            <p>Market Coverage Needed: <span id="market-coverage"></span>%</p>
+            <p id="viability-result"></p>
+            <div id="price-recommendation" class="recommendation"></div>
+            <button onclick="saveResults()">Save Results</button>
+        </div>
+    </div>
+
+    <div class="saved-results">
+        <h2>Saved Ideas</h2>
+        <div id="export-import">
+            <button onclick="exportData()">Export Data</button>
+            <button onclick="importData()">Import Data</button>
+            <input type="file" id="fileInput" style="display: none;" accept=".json" onchange="handleFileSelect(event)">
+        </div>
+        <table id="saved-ideas">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Idea</th>
+                    <th>Monthly Price</th>
+                    <th>Revenue Goal</th>
+                    <th>Viability</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div id="resultModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <div id="modalContent"></div>
+        </div>
+    </div>
+
+    <script>
+        let savedIdeas = [];
+        
+        function loadSavedIdeas() {
+            const saved = localStorage.getItem('startupCalculatorResults');
+            if (saved) {
+                try {
+                    savedIdeas = JSON.parse(saved);
+                    updateSavedIdeasTable();
+                } catch (e) {
+                    console.error('Error loading saved data:', e);
+                    savedIdeas = [];
+                }
+            }
+        }
+
+        function persistSavedIdeas() {
+            try {
+                localStorage.setItem('startupCalculatorResults', JSON.stringify(savedIdeas));
+            } catch (e) {
+                console.error('Error saving data:', e);
+                alert('Error saving data. Storage might be full.');
+            }
+        }
+        
+        function calculate() {
+            const idea = document.getElementById('idea').value;
+            const revenueGoal = parseFloat(document.getElementById('revenue-goal').value);
+            const monthlyPrice = parseFloat(document.getElementById('price').value);
+            const marketSize = parseFloat(document.getElementById('market-size').value);
+            
+            const annualRevenuePerCustomer = monthlyPrice * 12;
+            const requiredCustomers = Math.ceil(revenueGoal / annualRevenuePerCustomer);
+            const requiredLeads = requiredCustomers * 100;
+            const marketCoverage = (requiredLeads / marketSize) * 100;
+            const requiredMonthlyPrice = requiredLeads > marketSize ? 
+                Math.ceil((revenueGoal / (marketSize * 0.01)) / 12) : 
+                monthlyPrice;
+            
+            document.getElementById('annual-revenue').textContent = annualRevenuePerCustomer.toLocaleString();
+            document.getElementById('required-customers').textContent = requiredCustomers.toLocaleString();
+            document.getElementById('required-leads').textContent = requiredLeads.toLocaleString();
+            document.getElementById('market-coverage').textContent = marketCoverage.toFixed(1);
+            
+            const viabilityResult = document.getElementById('viability-result');
+            const priceRecommendation = document.getElementById('price-recommendation');
+            
+            if (requiredLeads > marketSize) {
+                viabilityResult.innerHTML = `<span class="warning">NOT VIABLE: You need ${requiredLeads.toLocaleString()} leads but your market only has ${marketSize.toLocaleString()} potential customers.</span>`;
+                
+                const priceIncrease = ((requiredMonthlyPrice - monthlyPrice) / monthlyPrice) * 100;
+                priceRecommendation.innerHTML = `
+                    <h3>Price Adjustment Needed</h3>
+                    <p>To achieve your revenue goal with the current market size:</p>
+                    <ul>
+                        <li>Increase monthly price to: $${requiredMonthlyPrice.toLocaleString()}</li>
+                        <li>Price increase needed: ${priceIncrease.toFixed(1)}%</li>
+                    </ul>
+                `;
+            } else {
+                viabilityResult.textContent = `VIABLE: Your market size can support your revenue goal.`;
+                priceRecommendation.innerHTML = '';
+            }
+            
+            document.getElementById('results').style.display = 'block';
+        }
+
+        function saveResults() {
+            const idea = document.getElementById('idea').value;
+            if (!idea.trim()) {
+                alert('Please enter a business idea before saving');
+                return;
+            }
+
+            const revenueGoal = document.getElementById('revenue-goal').value;
+            const monthlyPrice = document.getElementById('price').value;
+            const marketSize = document.getElementById('market-size').value;
+            const viabilityResult = document.getElementById('viability-result').textContent;
+            const annualRevenue = document.getElementById('annual-revenue').textContent;
+            const requiredCustomers = document.getElementById('required-customers').textContent;
+            const requiredLeads = document.getElementById('required-leads').textContent;
+            const marketCoverage = document.getElementById('market-coverage').textContent;
+            const priceRecommendation = document.getElementById('price-recommendation').innerHTML;
+
+            const result = {
+                date: new Date().toLocaleDateString(),
+                idea,
+                revenueGoal,
+                monthlyPrice,
+                marketSize,
+                viabilityResult,
+                annualRevenue,
+                requiredCustomers,
+                requiredLeads,
+                marketCoverage,
+                priceRecommendation
+            };
+
+            savedIdeas.push(result);
+            persistSavedIdeas();
+            updateSavedIdeasTable();
+        }
+
+        function updateSavedIdeasTable() {
+            const tbody = document.querySelector('#saved-ideas tbody');
+            tbody.innerHTML = '';
+            
+            savedIdeas.forEach((result, index) => {
+                const row = tbody.insertRow();
+                
+                row.insertCell().textContent = result.date;
+                row.insertCell().textContent = result.idea;
+                row.insertCell().textContent = `$${result.monthlyPrice}`;
+                row.insertCell().textContent = `$${parseInt(result.revenueGoal).toLocaleString()}`;
+                row.insertCell().textContent = result.viabilityResult.includes('NOT VIABLE') ? 'Not Viable' : 'Viable';
+                
+                const actionsCell = row.insertCell();
+                actionsCell.className = 'actions-cell';
+                
+                const viewButton = document.createElement('button');
+                viewButton.textContent = 'View';
+                viewButton.onclick = () => showDetails(index);
+                
+                const deleteButton = document.createElement('button');
+                deleteButton.textContent = 'Delete';
+                deleteButton.className = 'delete-btn';
+                deleteButton.onclick = (e) => {
+                    e.stopPropagation();
+                    deleteIdea(index);
+                };
+                
+                actionsCell.appendChild(viewButton);
+                actionsCell.appendChild(deleteButton);
+            });
+        }
+
+        function deleteIdea(index) {
+            if (confirm('Are you sure you want to delete this idea?')) {
+                savedIdeas.splice(index, 1);
+                persistSavedIdeas();
+                updateSavedIdeasTable();
+            }
+        }
+
+        function showDetails(index) {
+            const result = savedIdeas[index];
+            const modal = document.getElementById('resultModal');
+            const content = document.getElementById('modalContent');
+            
+            content.innerHTML = `
+                <h2>Detailed Results</h2>
+                <p><strong>Date:</strong> ${result.date}</p>
+                <p><strong>Business Idea:</strong> ${result.idea}</p>
+                <p><strong>Monthly Price:</strong> $${result.monthlyPrice}</p>
+                <p><strong>Revenue Goal:</strong> $${parseInt(result.revenueGoal).toLocaleString()}</p>
+                <p><strong>Market Size:</strong> ${parseInt(result.marketSize).toLocaleString()}</p>
+                <p><strong>Annual Revenue per Customer:</strong> $${result.annualRevenue}</p>
+                <p><strong>Required Customers:</strong> ${result.requiredCustomers}</p>
+                <p><strong>Required Leads:</strong> ${result.requiredLeads}</p>
+                <p><strong>Market Coverage:</strong> ${result.marketCoverage}%</p>
+                <p><strong>Viability:</strong> ${result.viabilityResult}</p>
+                ${result.priceRecommendation}
+            `;
+            
+            modal.style.display = 'block';
+        }
+
+        function exportData() {
+            const dataStr = JSON.stringify(savedIdeas, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'startup-calculator-data.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function importData() {
+            document.getElementById('fileInput').click();
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const importedData = JSON.parse(e.target.result);
+                        if (Array.isArray(importedData)) {
+                            savedIdeas = importedData;
+                            persistSavedIdeas();
+                            updateSavedIdeasTable();
+                            alert('Data imported successfully!');
+                        } else {
+                            throw new Error('Invalid data format');
+                        }
+                    } catch (error) {
+                        alert('Error importing data. Please make sure the file is valid.');
+                        console.error('Import error:', error);
+                    }
+                };
+                reader.readAsText(file);
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('resultModal').style.display = 'none';
+        }
+
+        window.onclick = function(event) {
+            const modal = document.getElementById('resultModal');
+            if (event.target == modal) {
+                modal.style.display = 'none';
+            }
+        }
+
+        window.onload = loadSavedIdeas;
+        updateSavedIdeasTable();
+    </script>
+</body>
+</html>
